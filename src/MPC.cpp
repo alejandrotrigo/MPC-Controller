@@ -6,8 +6,8 @@
 using CppAD::AD;
 
 // TODO: Set the timestep length and duration
-size_t N = 12;
-double dt = 0.12;
+size_t N = 1;
+double dt = 0.1;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -67,6 +67,7 @@ class FG_eval {
 		fg[0] += 10 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
 	}
 
+
 	fg[1 + x_start] = vars[x_start];
 	fg[1 + y_start] = vars[y_start];
 	fg[1 + psi_start] = vars[psi_start];
@@ -101,7 +102,7 @@ class FG_eval {
 
 		fg[2 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
 		fg[2 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
-		fg[2 + psi_start + t] = psi1 - (psi0 - v0 * delta0 / Lf * dt);
+		fg[2 + psi_start + t] = psi1 - (psi0 + v0 * delta0 / Lf * dt);
 		fg[2 + v_start + t] = v1 - (v0 + a0 * dt);
 		fg[2 + cte_start + t] = cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
 		fg[2 + epsi_start + t] = epsi1 - ((psi0 - psides0) - v0 * delta0 / Lf * dt);
@@ -116,7 +117,8 @@ class FG_eval {
 MPC::MPC() {}
 MPC::~MPC() {}
 
-vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
+//vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
+Solution MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   bool ok = true;
   size_t i;
   typedef CPPAD_TESTVECTOR(double) Dvector;
@@ -170,6 +172,20 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     vars_lowerbound[i] = -1.0;
     vars_upperbound[i] = 1.0;
   }
+
+  // Previous delta
+  for (unsigned int i = delta_start; i < a_start; i++)
+  {
+    vars_lowerbound[i] = prev_delta;
+    vars_upperbound[i] = prev_delta;
+  }
+  //Previous a
+  for (unsigned int i = a_start; i < n_vars; i++)
+  {
+    vars_lowerbound[i] = prev_a;
+    vars_upperbound[i] = prev_a;
+  }
+
   // Lower and upper limits for the constraints
   // Should be 0 besides initial state.
   Dvector constraints_lowerbound(n_constraints);
@@ -234,15 +250,15 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   //
   // {...} is shorthand for creating a vector, so auto x1 = {1.0,2.0}
   // creates a 2 element double vector.
-  vector<double> result;
+  Solution result;
 
-  result.push_back(solution.x[delta_start]);
-  result.push_back(solution.x[a_start]);
 
   for (unsigned int i = 0; i < N - 1; i++)
   {
-	  result.push_back(solution.x[x_start + i + 1]);
-	  result.push_back(solution.x[y_start + i + 1]);
+	  result.x.push_back(solution.x[x_start+i]);
+    result.y.push_back(solution.x[y_start+i]);
+    result.delta.push_back(solution.x[delta_start+i]);
+    result.a.push_back(solution.x[a_start+i]);
   }
   return result;
 }
