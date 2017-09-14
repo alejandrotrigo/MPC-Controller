@@ -6,8 +6,8 @@
 using CppAD::AD;
 
 // TODO: Set the timestep length and duration
-size_t N = 1;
-double dt = 0.1;
+size_t N = 12;
+double dt = 0.05;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -23,7 +23,7 @@ const double Lf = 2.67;
 
 double ref_cte = 0;
 double ref_epsi = 0;
-double ref_v = 80;
+double ref_v = 75;
 
 size_t x_start = 0;
 size_t y_start = x_start + N;
@@ -38,7 +38,12 @@ class FG_eval {
  public:
   // Fitted polynomial coefficients
   Eigen::VectorXd coeffs;
-  FG_eval(Eigen::VectorXd coeffs) { this->coeffs = coeffs; }
+  std::vector<double> prev_act;
+  FG_eval(Eigen::VectorXd coeffs, std::vector<double> prev_act)
+  {
+    this->coeffs = coeffs;
+    this->prev_act = prev_act;
+  }
 
   typedef CPPAD_TESTVECTOR(AD<double>) ADvector;
   void operator()(ADvector& fg, const ADvector& vars) {
@@ -49,22 +54,22 @@ class FG_eval {
     fg[0] = 0;
     for(unsigned int t = 0; t < N; t++)
     {
-		fg[0] += 2000 * CppAD::pow(vars[cte_start + t] - ref_cte, 2);
-		fg[0] += 2000 * CppAD::pow(vars[epsi_start + t] - ref_epsi, 2);
-		fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
+		fg[0] +=  CppAD::pow(vars[cte_start + t] - ref_cte, 2);
+		fg[0] +=  CppAD::pow(vars[epsi_start + t] - ref_epsi, 2);
+		fg[0] +=  CppAD::pow(vars[v_start + t] - ref_v, 2);
 	}
 
 	for (unsigned int t = 0; t < N -1; t++)
 	{
-		fg[0] += 5 * CppAD::pow(vars[delta_start + t], 2);
+		fg[0] += CppAD::pow(vars[delta_start + t], 2);
 		fg[0] += 5 * CppAD::pow(vars[a_start + t], 2);
-    fg[0] += 400 * CppAD::pow(vars[delta_start + t] * vars[v_start+t], 2);
+    fg[0] += 0.25 * CppAD::pow(vars[delta_start + t] * vars[v_start+t], 2);
 	}
 
 	for (unsigned int t = 0; t < N -2; t++)
 	{
-		fg[0] += 200 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
-		fg[0] += 10 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+		fg[0] += 300 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+		fg[0] += CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
 	}
 
 
@@ -146,12 +151,20 @@ Solution MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     vars[i] = 0;
   }
 
+  vars[x_start] = x;
+  vars[y_start] = y;
+  vars[psi_start] = psi;
+  vars[v_start] = v_start;
+  vars[cte_start] = cte;
+  vars[epsi_start] = epsi;
+
   Dvector vars_lowerbound(n_vars);
   Dvector vars_upperbound(n_vars);
   // TODO: Set lower and upper limits for variables.
 
   // Set all non-actuators upper and lowerlimits
   // to the max negative and positive values.
+  std::cout << "DEBUG 1" << std::endl;
   for (unsigned int i = 0; i < delta_start; i++)
   {
     vars_lowerbound[i] = -1.0e19;
@@ -161,26 +174,28 @@ Solution MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // The upper and lower limits of delta are set to -25 and 25
   // degrees (values in radians).
   // NOTE: Feel free to change this to something else.
+  std::cout << "DEBUG 2" << std::endl;
   for (unsigned int i = delta_start; i < a_start; i++) {
-    vars_lowerbound[i] = -0.436332 * Lf;
-    vars_upperbound[i] = 0.436332 * Lf;
+    vars_lowerbound[i] = -0.436332;
+    vars_upperbound[i] = 0.436332;
   }
-
+  // Previous delta
+  std::cout << "DEBUG 3" << std::endl;
+  for (unsigned int i = delta_start; i < delta_start+2; i++)
+  {
+    vars_lowerbound[i] = prev_delta;
+    vars_upperbound[i] = prev_delta;
+  }
   // Acceleration/decceleration upper and lower limits.
   // NOTE: Feel free to change this to something else.
+  std::cout << "DEBUG 4" << std::endl;
   for (unsigned int i = a_start; i < n_vars; i++) {
     vars_lowerbound[i] = -1.0;
     vars_upperbound[i] = 1.0;
   }
 
-  // Previous delta
-  for (unsigned int i = delta_start; i < a_start; i++)
-  {
-    vars_lowerbound[i] = prev_delta;
-    vars_upperbound[i] = prev_delta;
-  }
   //Previous a
-  for (unsigned int i = a_start; i < n_vars; i++)
+  for (unsigned int i = a_start; i < a_start + 2; i++)
   {
     vars_lowerbound[i] = prev_a;
     vars_upperbound[i] = prev_a;
@@ -210,7 +225,10 @@ Solution MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   constraints_upperbound[epsi_start] = epsi;
 
   // object that computes objective and constraints
-  FG_eval fg_eval(coeffs);
+  std::vector<double> prev_act;
+  prev_act.push_back(prev_delta);
+  prev_act.push_back(prev_a);
+  FG_eval fg_eval(coeffs, prev_act);
 
   //
   // NOTE: You don't have to worry about these options
@@ -255,10 +273,10 @@ Solution MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
 
   for (unsigned int i = 0; i < N - 1; i++)
   {
-	  result.x.push_back(solution.x[x_start+i]);
-    result.y.push_back(solution.x[y_start+i]);
-    result.delta.push_back(solution.x[delta_start+i]);
-    result.a.push_back(solution.x[a_start+i]);
+	  result.x_sol.push_back(solution.x[x_start+i]);
+    result.y_sol.push_back(solution.x[y_start+i]);
+    result.delta_sol.push_back(solution.x[delta_start+i]);
+    result.a_sol.push_back(solution.x[a_start+i]);
   }
   return result;
 }

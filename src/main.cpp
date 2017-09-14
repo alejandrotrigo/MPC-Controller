@@ -122,15 +122,13 @@ int main() {
 
     		  double epsi = -atan(coeffs[1]);
 
-    		  double Lf = 2.67;
-
     		  Eigen::VectorXd state(6);
     		  state << 0, 0, 0, v, cte, epsi;
 
     		  Solution vars = mpc.Solve(state, coeffs);
 
-          double steer_value = vars.delta_sol.at(2);
-          double throttle_value = vars.a.at(2);
+          steer_value = vars.delta_sol.at(2);
+          throttle_value = vars.a_sol.at(2);
           mpc.prev_delta = steer_value;
           mpc.prev_a = throttle_value;
 
@@ -141,7 +139,7 @@ int main() {
 
           double poly_inc = 2.5;
           int num_points = 25;
-          for (unsigned int i = 1; i < num_points; i++)
+          for (int i = 1; i < num_points; i++)
           {
             next_x_vals.push_back(poly_inc*i);
             next_y_vals.push_back(polyeval(coeffs, poly_inc*i));
@@ -150,14 +148,14 @@ int main() {
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-          msgJson["steering_angle"] = vars[0]/(deg2rad(25) * Lf);
-          msgJson["throttle"] = vars[1];
+          msgJson["steering_angle"] = -mpc.prev_delta/deg2rad(25);
+          msgJson["throttle"] = mpc.prev_a;
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
-          msgJson["mpc_x"] = vars.x;
-          msgJson["mpc_y"] = vars.y;
+          msgJson["mpc_x"] = vars.x_sol;
+          msgJson["mpc_y"] = vars.y_sol;
 
 
 
